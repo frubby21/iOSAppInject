@@ -10,8 +10,8 @@ on:
 
 env:
   # CHANGE THESE TO MATCH YOUR PROJECT
-  SCHEME: iOSAppInject          # e.g. app target / scheme name
-  PROJECT: iOSAppInject.xcodeproj      # or comment out and use WORKSPACE below
+  SCHEME: iOSAppInject          # app target / scheme name
+  PROJECT: iOSAppInject.xcodeproj      # Xcode project name
   # WORKSPACE: YourApp.xcworkspace     # uncomment & use if you use CocoaPods/SPM workspace
   CONFIGURATION: Release
   ARCHIVE_PATH: ${{ github.workspace }}/build/iOSAppInject.xcarchive
