@@ -1,4 +1,4 @@
-name: iOSAppIject Build
+name: iOSAppInject Build
 
 on:
   # Run manually from the Actions tab
