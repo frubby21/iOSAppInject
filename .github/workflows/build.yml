@@ -1,111 +1,55 @@
 name: iOSAppInject Build
 
 on:
-  # Run manually from the Actions tab
   workflow_dispatch:
-  # Optional: run on tag pushes
   push:
-    tags:
-      - "v*"
-
-env:
-  # CHANGE THESE TO MATCH YOUR PROJECT
-  SCHEME: iOSAppInject          # app target / scheme name
-  PROJECT: iOSAppInject.xcodeproj      # Xcode project name
-  # WORKSPACE: YourApp.xcworkspace     # uncomment & use if you use CocoaPods/SPM workspace
-  CONFIGURATION: Release
-  ARCHIVE_PATH: ${{ github.workspace }}/build/iOSAppInject.xcarchive
-  EXPORT_PATH: ${{ github.workspace }}/build/export
+    branches: [ "main", "master" ]
 
 jobs:
   build-and-export:
     runs-on: macos-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Optional: pin a specific Xcode version
-      # - name: Select Xcode version
-      #   uses: maxim-lobanov/setup-xcode@v1
-      #   with:
-      #     xcode-version: "16.0"
-
-      - name: Show Xcode version
-        run: xcodebuild -version
-
-      - name: Build and archive (iOS device)
+      - name: Find Project and Build
         run: |
-          set -o pipefail
-
-          if [ -n "${WORKSPACE:-}" ]; then
-            xcodebuild \
-              -workspace "$WORKSPACE" \
-              -scheme "$SCHEME" \
-              -configuration "$CONFIGURATION" \
-              -sdk iphoneos \
-              -destination 'generic/platform=iOS' \
-              -archivePath "$ARCHIVE_PATH" \
-              clean archive | xcpretty
-          else
-            xcodebuild \
-              -project "$PROJECT" \
-              -scheme "$SCHEME" \
-              -configuration "$CONFIGURATION" \
-              -sdk iphoneos \
-              -destination 'generic/platform=iOS' \
-              -archivePath "$ARCHIVE_PATH" \
-              clean archive | xcpretty
+          # 1. Try to generate a project if only Package.swift exists
+          if [ -f "Package.swift" ]; then
+            swift package generate-xcodeproj
           fi
 
-      - name: Create generic ExportOptions.plist
+          # 2. Find the project file dynamically
+          PROJECT_PATH=$(find . -name "*.xcodeproj" -print -quit)
+          if [ -z "$PROJECT_PATH" ]; then
+            echo "Error: No .xcodeproj or Package.swift found!"
+            exit 1
+          fi
+          
+          # 3. Get the Scheme name
+          SCHEME_NAME=$(basename "$PROJECT_PATH" .xcodeproj)
+          echo "Building Scheme: $SCHEME_NAME"
+
+          # 4. Build the Archive (No Signing Required for LiveContainer)
+          xcodebuild archive \
+            -project "$PROJECT_PATH" \
+            -scheme "$SCHEME_NAME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath ./build/App.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Package for LiveContainer
         run: |
-          cat > ExportOptions.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>development</string>
+          # LiveContainer just needs the .app inside a Payload folder
+          mkdir -p Payload
+          cp -r ./build/App.xcarchive/Products/Applications/*.app ./Payload/
+          zip -r iOSAppInject.ipa Payload
 
-            <key>compileBitcode</key>
-            <false/>
-
-            <key>destination</key>
-            <string>export</string>
-
-            <key>stripSwiftSymbols</key>
-            <true/>
-
-            <key>thinning</key>
-            <string>&lt;none&gt;</string>
-          </dict>
-          </plist>
-          EOF
-
-      - name: Export .ipa
-        run: |
-          set -o pipefail
-          xcodebuild -exportArchive \
-            -archivePath "$ARCHIVE_PATH" \
-            -exportPath "$EXPORT_PATH" \
-            -exportOptionsPlist ExportOptions.plist | xcpretty
-
-          echo "Exported files:"
-          ls -R "$EXPORT_PATH"
-
-      - name: Upload .ipa as artifact
+      - name: Upload .ipa
         uses: actions/upload-artifact@v4
         with:
-          name: TemplateInjectorApp-ipa
-          path: ${{ env.EXPORT_PATH }}/*.ipa
-          if-no-files-found: error
-
-      # OPTIONAL: also create a GitHub Release for tagged builds
-      # - name: Create GitHub Release
-      #   if: startsWith(github.ref, 'refs/tags/')
-      #   uses: softprops/action-gh-release@v2
-      #   with:
-      #     files: ${{ env.EXPORT_PATH }}/*.ipa
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: LiveContainer-Ready-IPA
+          path: iOSAppInject.ipa
