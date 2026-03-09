@@ -12,7 +12,7 @@ let package = Package(
     targets: [
         .target(
             name: "iOSAppInject",
-            path: "Sources" // This assumes your code is in a folder named 'Sources'
+            path: "."  // This tells the computer to look EVERYWHERE in the folder
         )
     ]
 )
